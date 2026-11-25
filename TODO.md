@@ -8,3 +8,9 @@
 - Model detail: costume pieces, facial expressions, open hands for throws.
 - Persistence of records across power cycles is untested on real hardware / other emulators
   (battery RAM header: RAM size $06, type $15).
+- **Frame rate on accurate timing:** current snes9x's cycle-accurate Super FX model (2026) renders fights at
+  ~12 fps (legacy timing: 30 fps). Most Super FX time is per vertex (point transform ~25%, edge setup ~31%),
+  so the next speed-ups are in `fx.gsu` (e.g. running the transform/edge code from the GSU cache instead of
+  RAM) and in vertex counts. Measure with `FXDBG=<frame> test/snesrun.py ...` on the patched core.
+- **Anatomy rework:** VALKA is done with the two-layer builder (`tools/anatomy.py`). Next: physiques and costume
+  slices for KAZE, LIN, BRUTUS, ROCCO and NOVA (set `v2=True` and add a `PHYSIQUE` entry).

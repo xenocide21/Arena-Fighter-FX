@@ -163,6 +163,27 @@ Each fighter is built like a sprite artist builds a figure: out of hand-authored
 
 **Palette.** One 15-colour palette per fighter: skin, hair and two outfit materials at three shades each, plus white, trail and ink. Mirror matches use an alternate costume.
 
+**Anatomy first, costume on top (VALKA is the reference).** `tools/anatomy.py` builds a fighter in two layers:
+1. **Anatomy:** a per-fighter `PHYSIQUE` (side-view width profiles for the pelvis, ribcage, thighs, calves,
+   ankles, upper arms and forearms, plus joint radii, fist and foot sizes). Bodies differ by physique, not by
+   one template with different clothes.
+2. **Costume:** clothes and gear are slices of those profiles, a little inflated (boots = calf and ankle
+   profiles from below the knee; the shoulder guard follows the deltoid dome; the chest guard is a band of the
+   ribcage), so clothing always sits on the body.
+
+Joints are built so they stay connected as limbs rotate:
+- every limb starts with a dome around its socket (hip, shoulder, knee, elbow)
+- its ink outline starts just below the joint, and the dome fills over that cut, so the thigh flows out of
+  the pelvis and the shin out of the knee with no outline ring
+- concave shapes (lumbar curve, calf to Achilles) are two convex pieces plus a small bridge fill
+- the near shin draws over the thigh end at the knee
+
+Spending: the Super FX pays per vertex (transform + edge setup is ~55% of its time), not per pixel. So the
+exporter re-hulls after quantising and drops near-collinear vertices (`simplify`), and detail shading is left
+out of the far-side limb variants. The new VALKA costs the same Super FX time as the old one.
+`python3 tools/model_lab.py VALKA --yaw 0,40,70` renders a pose sheet (also from orbiting camera angles) with
+the exact Super FX maths.
+
 **The tools.** The models live in `tools/model.py` (with `STYLES` per character). Running it renders `preview/models.png` with exactly the Super FX maths, for fast iteration.
 
 **Each frame:**
@@ -183,7 +204,8 @@ The Super FX effects:
 - **Hit flash:** a fighter flashes white-hot when a clean hit lands.
 - **KO slow motion:** about a second of half-speed after the knockout blow.
 
-Performance: 30 fps (about 98% of frames in snes9x), with ~60 polygons per fighter. The tile upload is a little more than one vblank holds, so the screen is blanked for a few lines at the very top (inside TV overscan).
+Performance: 30 fps in snes9x's legacy Super FX timing, with ~60 polygons per fighter. Current snes9x
+(cycle-accurate Super FX, closer to real hardware) measures about 12 fps in fights; see TODO.md. The tile upload is a little more than one vblank holds, so the screen is blanked for a few lines at the very top (inside TV overscan).
 
 ## Building
 
@@ -201,6 +223,10 @@ Requirements: cc65 (`ca65`/`ld65`) and python3 with Pillow.
   - Font and HUD tiles
   - Ball sprites and maths tables
 - `tools/model.py`: the sculpted polygon models (parts, shapes, shading, costumes) and the preview renderer.
+- `tools/anatomy.py`: the two-layer (anatomy + costume) builder; `tools/model_lab.py`: pose-sheet renderer.
+- `test/snesrun.py`: headless snes9x (libretro) runner for input scripts, screenshots and frame stats
+  (`test/valka_fight.txt`, `test/valka_select.txt`); `test/snes9x_fxdbg.patch` adds Super FX busy-time
+  counters and a legacy-timing switch to the core.
 - `tools/fighters.py`: all fighter data in plain Python:
   - Proportions, colours, stances, limb segments (polygons) and the rounded parts (head, joints, hair, accessories)
   - Keyframed animations, baked by forward kinematics into joint positions (int8)

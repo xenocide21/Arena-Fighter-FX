@@ -99,10 +99,12 @@ class Part:
         self.side = side            # None, 'n' or 'f' (limb sides get near/far shading)
         self.depth = depth          # draw-order bias (+ = drawn later / in front)
         self.polys = []             # (colour, [side-view points])
+        self.nearonly = set()       # polygon indices left out of the far-side variant
 
-    def poly(self, col, pts, outline=False):
+    def poly(self, col, pts, outline=False, near_only=False):
         h = hull(pts)
         if len(h) < 3: return self          # degenerate slice: nothing to draw
+        if near_only: self.nearonly.add(len(self.polys))
         if outline:
             self.polys.append((col | 0x80, grow(h, 1.0)))   # border pixels drawn in ink
         else:
@@ -199,10 +201,19 @@ def build(ch, J, style):
     # ---------------- head (neck -> head centre), side view around the head centre
     hb = Bone(sv(2), sv(3))
     hd = Part("head", 2, 3, hb, depth=2)
-    Hc = sv(3); r = B.get("headsz", 8.5) * 0.95
+    Hc = sv(3); r = B.get("headsz", 8.5) * 0.95 * style.get("headk", 1.0)
     def Hp(x, y): return (Hc[0] + x * r / 8, Hc[1] + y * r / 8)
     # neck
-    hd.poly(SKIN, [Hp(-2.6, -6), Hp(2.6, -7), Hp(3.0, -13), Hp(-2.8, -13)], outline=True)
+    if style.get("neckblend"):
+        # anatomy builder: the neck runs from under the skull into the collar (absolute
+        # units, so a smaller head keeps a full-length neck); its lower end has no ink,
+        # so it sinks into the torso instead of sitting on it
+        nb = B["headr"] + 4.0; nw = 2.5 if not male else 3.0
+        def Np(x, y): return (Hc[0] + x, Hc[1] - y)
+        hd.poly(SKIN, [Np(-nw, 0.4 * r), Np(nw + 0.2, 0.6 * r), Np(nw + 0.8, nb - 2.0), Np(-nw - 0.2, nb - 2.0)], outline=True)
+        hd.poly(SKIN, [Np(-nw + 0.7, nb - 3.4), Np(nw, nb - 3.4), Np(nw + 1.0, nb), Np(-nw + 0.4, nb)])
+    else:
+        hd.poly(SKIN, [Hp(-2.6, -6), Hp(2.6, -7), Hp(3.0, -13), Hp(-2.8, -13)], outline=True)
     jaw = 1.15 if male else 1.0
     skull = [Hp(-7.6, 1), Hp(-6.6, 5.2), Hp(-3, 8), Hp(1.5, 8.2), Hp(5.2, 6), Hp(6.4, 3), Hp(6.6, 1.5),
              Hp(7.8, -0.4), Hp(6.4, -1.6), Hp(6.4, -3.4), Hp(5.6 * jaw, -6.2), Hp(3.6, -7.6 * jaw), Hp(-0.6, -6.6 * jaw), Hp(-5.8, -3)]
@@ -347,23 +358,47 @@ def build(ch, J, style):
     return parts
 
 # ------------------------------------------------------------------ export
-def encode(part, scale_o):
+def simplify(h, tol):
+    """drop convex-hull vertices that sit within tol (design units) of the line through
+    their neighbours.  The Super FX pays per vertex (transform + edge setup), not per
+    pixel, so near-collinear profile points are pure cost."""
+    h = list(h)
+    while len(h) > 3:
+        best, bi = None, -1
+        for i in range(len(h)):
+            a, p, c = h[i - 1], h[i], h[(i + 1) % len(h)]
+            ex, ey = c[0] - a[0], c[1] - a[1]
+            L = math.hypot(ex, ey) or 1e-6
+            d = abs((p[0] - a[0]) * ey - (p[1] - a[1]) * ex) / L
+            if best is None or d < best: best, bi = d, i
+        if best >= tol: break
+        h.pop(bi)
+    return h
+
+def encode(part, scale_o, tol=None):
     """-> bytes for the Super FX: [npolys] then per polygon [colour, n, (s7, o4) * n]"""
-    out = bytearray([len(part.polys)])
+    polys = []
     for col, pts in part.polys:
-        pts = hull(pts)[:16]
-        assert len(pts) >= 3
-        out += bytes([col, len(pts)])
-        for p in pts:
+        q = []
+        h = hull(pts)
+        if tol: h = simplify(h, tol)
+        for p in h:
             s, o = part.bone.to_bone(p)
-            s7 = max(-128, min(127, int(round(s * 32))))      # 1/32 of the bone: -4 .. +4
-            o4 = max(-128, min(127, int(round(o * scale_o))))
-            out += bytes([s7 & 0xFF, o4 & 0xFF])
+            q.append((max(-128, min(127, int(round(s * 32)))),       # 1/32 of the bone: -4 .. +4
+                      max(-128, min(127, int(round(o * scale_o))))))
+        # two-layer models (tol set): re-hull AFTER quantising, so rounding cannot dent a
+        # run of nearly collinear profile points (and collinear ones cost no vertices)
+        q = hull(q)[:16] if tol is not None else q[:16]
+        if len(q) >= 3: polys.append((col, q))
+    out = bytearray([len(polys)])
+    for col, q in polys:
+        out += bytes([col, len(q)])
+        for s7, o4 in q: out += bytes([s7 & 0xFF, o4 & 0xFF])
     return out
 
 def far_variant(part):
     q = Part(part.name, part.a, part.b, part.bone, part.side, part.depth)
-    q.polys = [(shift_far(c), pts) for c, pts in part.polys]
+    q.polys = [(shift_far(c), pts) for i, (c, pts) in enumerate(part.polys) if i not in getattr(part, "nearonly", ())]
     return q
 
 # ------------------------------------------------------------------ the six fighters
@@ -377,9 +412,11 @@ STYLES = {
     "BRUTUS": dict(mats=dict(torso="skin", legs="skin", shins="skin", feet="b"),
                    torso=["abs", "trunks"], hair="beard", wrist="b", boots="b", brow="hair",
                    chains=[]),
-    "VALKA": dict(mats=dict(torso="a", legs="a", shins="b", feet="b"),
+    # VALKA is the reference for the two-layer (anatomy + costume) builder in anatomy.py
+    "VALKA": dict(v2=True, simplify=0.8, mats=dict(torso="a", legs="a", shins="b", feet="b"),
+                  costume=dict(guard="b", neckline=True, belt="hair", pads="b", wrist="b", boots="b", boot_top=0.10, fur="hair"),
                   torso=["bust", "armor", "belt"], beltmat="hair", hair="braid", pads="b", wrist="b", lips="a",
-                  chains=[(3, 16, 3.2, 3.0, "hair", -2), (16, 17, 3.0, 2.4, "hair", -2), (17, 18, 2.4, 1.4, "hair", -2)]),
+                  chains=[(3, 16, 2.8, 2.6, "hair", -2), (16, 17, 2.6, 2.0, "hair", -2), (17, 18, 2.0, 1.2, "hair", -2)]),
     "ROCCO": dict(mats=dict(torso="a", legs="skin", shins="skin", feet="a"),
                   torso=["tank", "abs"], hair="mohawk", head=["shades"], gloves="b", shorts="b",
                   chains=[]),
@@ -391,7 +428,11 @@ STYLES = {
 
 def parts_for(ch, F):
     J = F.fk(ch, ch["stance"])
-    return build(ch, J, STYLES[ch["name"]])
+    st = STYLES[ch["name"]]
+    if st.get("v2"):
+        import anatomy
+        return anatomy.build(ch, J, st)
+    return build(ch, J, st)
 
 # ------------------------------------------------------------------ preview (same maths as the Super FX)
 def render(ch, F, J, pal, scale=0.93, flip=False, img=None, at=(0, 0)):
@@ -403,19 +444,23 @@ def render(ch, F, J, pal, scale=0.93, flip=False, img=None, at=(0, 0)):
         x, y = J[j][0], J[j][1]
         if flip: x = -x
         return (at[0] + x * scale, at[1] - y * scale)
-    # near side = joints with larger z (the camera looks from +z here)
+    # same order as the 65816: depth = mean of the bone ends, minus bias * 8 half-texels
+    # (one design unit = 2 * SCALE half-texels); the camera looks from +z here
     nearN = J[4][2] >= J[7][2]
+    hu = 2 * F.SCALE
     order = []
     for p in parts:
         z = (J[p.a][2] + J[p.b][2]) / 2
         q = p
+        bn, bf = part_bias(ch, p)
+        bias = bn
         if p.side:
             far = (p.side == "n") != nearN
-            if far: q = far_variant(p)
-        order.append((z * 0.2 + q.depth * 0.5 + (0 if not p.side else (1.5 if (p.side == "n") == nearN else -1.5)), q))
+            if far: q = far_variant(p); bias = bf
+        order.append((z + bias * 8 / hu, q))
     order.sort(key=lambda t: t[0])
     for _, p in order:
-        data = encode(p, so)
+        data = encode(p, so, STYLES[ch["name"]].get("simplify"))
         A = scr(p.a); Bp = scr(p.b)
         dx, dy = Bp[0] - A[0], Bp[1] - A[1]
         L = math.hypot(dx, dy) or 1
@@ -443,6 +488,30 @@ def palette_rgb(ch, F):
         out.append((r, g, b))
     return out
 
+def part_bias(ch, p):
+    """(near, far) depth bias of a part, as written to the part table"""
+    if not p.side: return p.depth, p.depth
+    bn = {"uarm": 1, "farm": 2, "thigh": 0, "shin": 0}[p.name[:-1]]
+    if p.name.startswith("shin") and STYLES[ch["name"]].get("v2"): bn = 1   # knee: shin dome over the thigh end
+    return bn, bn - 3
+
+def export(ch, F):
+    """-> (shape blob, part table entries [(a, b, side, biasNear, biasFar, offNear, offFar)])"""
+    so = 4 * F.SCALE
+    blob = bytearray(); table = []
+    for p in parts_for(ch, F):
+        tol = STYLES[ch["name"]].get("simplify")
+        offN = len(blob); blob += encode(p, so, tol)
+        side = {None: 0, "n": 1, "f": 2}[p.side]
+        if p.side:
+            offF = len(blob); blob += encode(far_variant(p), so, tol)
+            # depth bias by role, not by joint name: near limbs in front of the torso, far limbs behind
+            bn, bf = part_bias(ch, p)
+        else:
+            offF = offN; bn = bf = p.depth
+        table.append((p.a, p.b, side, bn, bf, offN, offF))
+    return blob, table
+
 if __name__ == "__main__":
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -465,20 +534,3 @@ if __name__ == "__main__":
     img = img.resize((img.width * 3, img.height * 3), Image.NEAREST)
     img.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "preview", "models.png"))
     print("preview/models.png")
-
-def export(ch, F):
-    """-> (shape blob, part table entries [(a, b, side, biasNear, biasFar, offNear, offFar)])"""
-    so = 4 * F.SCALE
-    blob = bytearray(); table = []
-    for p in parts_for(ch, F):
-        offN = len(blob); blob += encode(p, so)
-        side = {None: 0, "n": 1, "f": 2}[p.side]
-        if p.side:
-            offF = len(blob); blob += encode(far_variant(p), so)
-            # depth bias by role, not by joint name: near limbs in front of the torso, far limbs behind
-            bn = {"uarm": 1, "farm": 2, "thigh": 0, "shin": 0}[p.name[:-1] if p.name[-1] in "nf" else p.name]
-            bf = bn - 3
-        else:
-            offF = offN; bn = bf = p.depth
-        table.append((p.a, p.b, side, bn, bf, offN, offF))
-    return blob, table
