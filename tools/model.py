@@ -208,7 +208,7 @@ def build(ch, J, style):
         # anatomy builder: the neck runs from under the skull into the collar (absolute
         # units, so a smaller head keeps a full-length neck); its lower end has no ink,
         # so it sinks into the torso instead of sitting on it
-        nb = B["headr"] + 4.0; nw = 2.5 if not male else 3.0
+        nb = B["headr"] + 4.0; nw = style.get("neckw", 2.5 if not male else 3.0)
         def Np(x, y): return (Hc[0] + x, Hc[1] - y)
         hd.poly(SKIN, [Np(-nw, 0.4 * r), Np(nw + 0.2, 0.6 * r), Np(nw + 0.8, nb - 2.0), Np(-nw - 0.2, nb - 2.0)], outline=True)
         hd.poly(SKIN, [Np(-nw + 0.7, nb - 3.4), Np(nw, nb - 3.4), Np(nw + 1.0, nb), Np(-nw + 0.4, nb)])
@@ -403,27 +403,35 @@ def far_variant(part):
 
 # ------------------------------------------------------------------ the six fighters
 STYLES = {
-    "KAZE": dict(mats=dict(torso="a", sleeve="a", legs="a", shins="a", feet="skin"),
+    # every fighter uses the two-layer builder (anatomy.py): v2=True; the costume dict
+    # describes the clothing layer over that fighter's PHYSIQUE.  The legacy keys
+    # (torso / sleeve / baggy ...) still drive the head, hair and accessory chains.
+    "KAZE": dict(v2=True, simplify=0.8, mats=dict(torso="a", sleeve="a", legs="a", shins="a", feet="skin"),
+                 costume=dict(top_inflate=0.7, lapel=True, belt="hair", belt_inflate=0.6, sleeve="a", sleeve_inflate=1.0, cuff=0.70,
+                              pants="a", pants_inflate=1.2, hem=0.86),
                  torso=["lapel", "belt"], beltmat="hair", hair="spikes", head=["headband"], sleeve="long", baggy=True,
                  chains=[(17, 18, 1.5, 1.1, "b", -2), (0, 19, 1.4, 1.2, "hair", 1)]),
-    "LIN": dict(mats=dict(torso="a", sleeve="a", legs="hair", shins="hair", feet="hair"),
+    "LIN": dict(v2=True, simplify=0.8, mats=dict(torso="a", sleeve="a", legs="hair", shins="hair", feet="hair"),
+                costume=dict(top_inflate=0.4, belt="b", sleeve="a", sleeve_inflate=0.7, cuff=0.72,
+                             pants="hair", pants_inflate=1.3, hem=0.90, gathered=True),
                 torso=["bust", "belt"], beltmat="b", hair="buns", sleeve="long", lips="a", baggy=True,
                 chains=[(0, 19, 1.8, 1.4, "b", 1)]),
-    "BRUTUS": dict(mats=dict(torso="skin", legs="skin", shins="skin", feet="b"),
+    "BRUTUS": dict(v2=True, simplify=0.8, mats=dict(torso="skin", legs="skin", shins="skin", feet="b"),
+                   costume=dict(abs=True, trunks="a", wrist="b", wrist_t0=0.60, boots="b", boot_top=0.45),
                    torso=["abs", "trunks"], hair="beard", wrist="b", boots="b", brow="hair",
                    chains=[]),
-    # VALKA is the reference for the two-layer (anatomy + costume) builder in anatomy.py
+    # VALKA was the reference character for the two-layer builder
     "VALKA": dict(v2=True, simplify=0.8, mats=dict(torso="a", legs="a", shins="b", feet="b"),
-                  costume=dict(guard="b", neckline=True, belt="hair", pads="b", wrist="b", boots="b", boot_top=0.10, fur="hair"),
+                  costume=dict(guard="b", neckline=True, belt="hair", pads="b", wrist="b", boots="b", boot_top=0.10, fur="hair", pants="a"),
                   torso=["bust", "armor", "belt"], beltmat="hair", hair="braid", pads="b", wrist="b", lips="a",
                   chains=[(3, 16, 2.8, 2.6, "hair", -2), (16, 17, 2.6, 2.0, "hair", -2), (17, 18, 2.0, 1.2, "hair", -2)]),
-    "ROCCO": dict(mats=dict(torso="a", legs="skin", shins="skin", feet="a"),
-                  torso=["tank", "abs"], hair="mohawk", head=["shades"], gloves="b", shorts="b",
-                  chains=[]),
-    "NOVA": dict(mats=dict(torso="a", legs="a", shins="a", feet="skin"),
+    "ROCCO": dict(v2=True, simplify=0.8, mats=dict(torso="a", legs="skin", shins="skin", feet="a"),
+                  costume=dict(tank=True, shorts="b", gloves="b"),
+                  torso=["tank", "abs"], hair="mohawk", head=["shades"], gloves="b", shorts="b", chains=[]),
+    "NOVA": dict(v2=True, simplify=0.8, mats=dict(torso="a", legs="a", shins="a", feet="skin"),
+                 costume=dict(top_inflate=0.3, belt="b", pants="a", pants_inflate=1.4, hem=0.88, gathered=True),
                  torso=["bust", "belt"], beltmat="b", hair="ponytail", lips="a", baggy=True,
-                 chains=[(3, 16, 2.6, 2.4, "hair", -2), (16, 17, 2.4, 1.8, "hair", -2), (17, 18, 1.8, 1.0, "hair", -2),
-                         (2, 19, 2.2, 1.6, "b", 1)]),
+                 chains=[(3, 16, 2.6, 2.4, "hair", -2), (16, 17, 2.4, 1.8, "hair", -2), (17, 18, 1.8, 1.0, "hair", -2), (2, 19, 2.2, 1.6, "b", 1)]),
 }
 
 def parts_for(ch, F):

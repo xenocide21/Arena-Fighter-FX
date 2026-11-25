@@ -163,13 +163,15 @@ Each fighter is built like a sprite artist builds a figure: out of hand-authored
 
 **Palette.** One 15-colour palette per fighter: skin, hair and two outfit materials at three shades each, plus white, trail and ink. Mirror matches use an alternate costume.
 
-**Anatomy first, costume on top (VALKA is the reference).** `tools/anatomy.py` builds a fighter in two layers:
+**Anatomy first, costume on top (all six fighters).** `tools/anatomy.py` builds every fighter in two layers:
 1. **Anatomy:** a per-fighter `PHYSIQUE` (side-view width profiles for the pelvis, ribcage, thighs, calves,
-   ankles, upper arms and forearms, plus joint radii, fist and foot sizes). Bodies differ by physique, not by
-   one template with different clothes.
+   ankles, upper arms and forearms, plus joint radii, fist and foot sizes). Male and female base bodies are
+   scaled region by region (chest, waist, belly, hips, glutes, bust, arms, legs, neck): BRUTUS gets a barrel
+   chest, belly and thick neck, LIN a small wiry frame, NOVA long legs, ROCCO a boxer's shoulders.
 2. **Costume:** clothes and gear are slices of those profiles, a little inflated (boots = calf and ankle
-   profiles from below the knee; the shoulder guard follows the deltoid dome; the chest guard is a band of the
-   ribcage), so clothing always sits on the body.
+   profiles from below the knee; a gi sleeve is the arm profile inflated; shorts and trunks are the pelvis plus
+   the top of the thigh; the shoulder guard follows the deltoid dome), so clothing always sits on the body.
+   Each fighter's `costume` dict in `STYLES` (model.py) lists its layers.
 
 Joints are built so they stay connected as limbs rotate:
 - every limb starts with a dome around its socket (hip, shoulder, knee, elbow)
@@ -180,7 +182,8 @@ Joints are built so they stay connected as limbs rotate:
 
 Spending: the Super FX pays per vertex (transform + edge setup is ~55% of its time), not per pixel. So the
 exporter re-hulls after quantising and drops near-collinear vertices (`simplify`), and detail shading is left
-out of the far-side limb variants. The new VALKA costs the same Super FX time as the old one.
+out of the far-side limb variants. Vertex counts match the old models; measured Super FX time is within a
+few percent per matchup. `preview/roster_anatomy_before_after.png` compares the roster.
 `python3 tools/model_lab.py VALKA --yaw 0,40,70` renders a pose sheet (also from orbiting camera angles) with
 the exact Super FX maths.
 

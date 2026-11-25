@@ -12,5 +12,5 @@
   ~12 fps (legacy timing: 30 fps). Most Super FX time is per vertex (point transform ~25%, edge setup ~31%),
   so the next speed-ups are in `fx.gsu` (e.g. running the transform/edge code from the GSU cache instead of
   RAM) and in vertex counts. Measure with `FXDBG=<frame> test/snesrun.py ...` on the patched core.
-- **Anatomy rework:** VALKA is done with the two-layer builder (`tools/anatomy.py`). Next: physiques and costume
-  slices for KAZE, LIN, BRUTUS, ROCCO and NOVA (set `v2=True` and add a `PHYSIQUE` entry).
+- **Anatomy rework:** all six fighters use the two-layer builder (`tools/anatomy.py`). The legacy limb/torso
+  code in `model.build` now only supplies heads and hair chains; it can be trimmed once nothing else needs it.
